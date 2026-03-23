@@ -82,25 +82,52 @@ function initGrid() {
     ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.fill();
 }
 
+function getNeighbors(r, c) {
+    let o = (r % 2 === 1) ? 1 : -1;
+    let n = [[r,c-1],[r,c+1],[r-1,c],[r+1,c],[r-1,c+o],[r+1,c+o]];
+    return n.filter(nb => nb[0]>=0 && nb[0]<GRID_ROWS && nb[1]>=0 && nb[1]<GRID_COLS);
+}
+
 function snapToGrid() {
     currentBall.shooting = false;
     let r = Math.round((currentBall.y - BUBBLE_RADIUS) / (BUBBLE_RADIUS * 1.7));
-    let offsetX = (r % 2 === 1) ? BUBBLE_RADIUS : 0;
-    let c = Math.round((currentBall.x - BUBBLE_RADIUS - offsetX) / (BUBBLE_RADIUS * 2));
+    let o = (r % 2 === 1) ? BUBBLE_RADIUS : 0;
+    let c = Math.round((currentBall.x - BUBBLE_RADIUS - o) / (BUBBLE_RADIUS * 2));
     r = Math.max(0, Math.min(r, GRID_ROWS-1)); c = Math.max(0, Math.min(c, GRID_COLS-1));
-    if (grid[r][c]) r = Math.min(r + 1, GRID_ROWS - 1);
-    grid[r][c] = { x: (c * BUBBLE_RADIUS * 2) + BUBBLE_RADIUS + (r % 2 === 1 ? BUBBLE_RADIUS : 0),
-                  y: (r * BUBBLE_RADIUS * 1.7) + BUBBLE_RADIUS,
-                  color: isGoldenMode ? '#FFD700' : currentBall.color };
-    let color = grid[r][c].color; let matches = [[r,c]];
-    [[r, c-1], [r, c+1], [r-1, c], [r+1, c]].forEach(n => {
-        if(grid[n[0]] && grid[n[0]][n[1]] && grid[n[0]][n[1]].color === color) matches.push([n[0], n[1]]);
-    });
+    if (grid[r][c]) r++;
+    if (r >= GRID_ROWS) { alert("GAME OVER!"); score=0; scoreEl.innerText=0; initGrid(); return; }
+
+    grid[r][c] = { 
+        x: (c*BUBBLE_RADIUS*2)+BUBBLE_RADIUS+(r%2===1?BUBBLE_RADIUS:0), 
+        y: (r*BUBBLE_RADIUS*1.7)+BUBBLE_RADIUS, 
+        color: isGoldenMode ? '#FFD700' : currentBall.color 
+    };
+    checkMatches(r, c);
+    }
+    function checkMatches(r, c) {
+    let color = grid[r][c].color;
+    let matches = [[r,c]], queue = [[r,c]], visited = new Set([r+','+c]);
+    while(queue.length > 0) {
+        let [currR, currC] = queue.shift();
+        getNeighbors(currR, currC).forEach(([nr, nc]) => {
+            if(grid[nr] && grid[nr][nc] && grid[nr][nc].color === color && !visited.has(nr+','+nc)) {
+                visited.add(nr+','+nc); matches.push([nr, nc]); queue.push([nr, nc]);
+            }
+        });
+    }
     if(matches.length >= 3) {
         matches.forEach(m => grid[m[0]][m[1]] = null);
         score += matches.length * 20; scoreEl.innerText = score; playPopSound();
+        let connected = new Set(); let q = [];
+        for(let j=0; j<GRID_COLS; j++) if(grid[0][j]) { connected.add('0,'+j); q.push([0,j]); }
+        while(q.length > 0) {
+            let [cr, cc] = q.shift();
+            getNeighbors(cr, cc).forEach(([nr, nc]) => {
+                if(grid[nr] && grid[nr][nc] && !connected.has(nr+','+nc)) { connected.add(nr+','+nc); q.push([nr, nc]); }
+            });
+        }
+        for(let i=0; i<GRID_ROWS; i++) for(let j=0; j<GRID_COLS; j++) if(grid[i][j] && !connected.has(i+','+j)) grid[i][j] = null;
     }
-    if(grid[r][c] && grid[r][c].y > LIMIT_LINE) { alert("GAME OVER!"); score=0; scoreEl.innerText=0; initGrid(); }
     currentBall = { x: canvas.width/2, y: canvas.height-40, color: isGoldenMode ? '#FFD700' : COLORS[Math.floor(Math.random()*COLORS.length)], vx:0, vy:0, shooting: false };
 }
 
