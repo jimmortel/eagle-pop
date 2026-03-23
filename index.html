@@ -1,14 +1,46 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+    <title>Eagle-Pop Elite 🦅</title>
+    <style>
+        body { margin: 0; background: #080808; color: white; font-family: 'Segoe UI', sans-serif; overflow: hidden; touch-action: none; }
+        canvas { display: block; margin: 0 auto; background: radial-gradient(circle, #1a1a1a 0%, #080808 100%); }
+        #ui { position: absolute; top: 15px; width: 100%; text-align: center; pointer-events: none; z-index: 10; }
+        .score { font-size: 28px; font-weight: 900; color: #ccaa44; text-shadow: 0 0 15px rgba(204, 170, 68, 0.6); letter-spacing: 2px; }
+        #wallet-bar { 
+            position: absolute; bottom: 0; width: 100%; background: rgba(10, 10, 10, 0.9);
+            backdrop-filter: blur(15px); border-top: 2px solid #ccaa44; padding: 20px 0; text-align: center;
+        }
+        .tip-btn {
+            background: linear-gradient(135deg, #ccaa44 0%, #f5d76e 100%); color: #000;
+            border: none; padding: 14px 30px; border-radius: 50px; font-weight: 900;
+            text-transform: uppercase; font-size: 13px; cursor: pointer;
+            box-shadow: 0 0 20px rgba(204,170,68,0.4); transition: transform 0.1s;
+        }
+        .tip-btn:active { transform: scale(0.95); }
+        .addr { font-size: 9px; color: #666; margin-top: 10px; font-family: monospace; word-break: break-all; padding: 0 20px; display: none; }
+    </style>
+</head>
+<body>
+<div id="ui"><div class="score">EAGLE-POP: <span id="scoreVal">0</span></div></div>
+<canvas id="game"></canvas>
+<div id="wallet-bar">
+    <button class="tip-btn" onclick="toggleAddr()">⚡ SUPPORT THE BUILDER (SOL)</button>
+    <div id="addr" class="addr">GU5dNvMQKoUiVJvZ5HUgrv3CxtrR5ujxfHK2HPT6Z6bV</div>
+</div>
 <script>
-const canvas = document.getElementById('game');
+    const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const scoreEl = document.getElementById('scoreVal');
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight - 100;
 
 const COLORS = ['#FF3E3E', '#42FF3E', '#3EABFF', '#FFD700'];
-const GRID_COLS = 10; // Plus de colonnes = bulles plus petites
+const GRID_COLS = 10; 
 const BUBBLE_RADIUS = canvas.width / (GRID_COLS * 2);
-const GRID_ROWS = 16; // On ajoute des lignes pour compenser la petite taille
+const GRID_ROWS = 16; 
 const LIMIT_LINE = (GRID_ROWS - 3) * BUBBLE_RADIUS * 1.7;
 
 let grid = [];
@@ -45,11 +77,10 @@ function playPopSound() {
     gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.08);
     osc.connect(gain); gain.connect(audioCtx.destination);
     osc.start(); osc.stop(audioCtx.currentTime + 0.08);
-}
-
-function initGrid() {
+        }
+    function initGrid() {
     grid = Array.from({ length: GRID_ROWS }, () => Array(GRID_COLS).fill(null));
-    for(let r=0; r<6; r++) { // Un peu plus de bulles au départ
+    for(let r=0; r<6; r++) {
         for(let c=0; c<GRID_COLS; c++) {
             grid[r][c] = createBubble(r, c, COLORS[Math.floor(Math.random() * COLORS.length)]);
         }
@@ -72,13 +103,13 @@ function drawBubble(x, y, color) {
     ctx.fillStyle = color;
     ctx.shadowBlur = 12; ctx.shadowColor = color;
     ctx.fill(); ctx.shadowBlur = 0;
-    // Petit éclat brillant plus discret
     ctx.beginPath();
     ctx.arc(x - BUBBLE_RADIUS/3.5, y - BUBBLE_RADIUS/3.5, BUBBLE_RADIUS/6, 0, Math.PI*2);
     ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.fill();
 }
 
 function handleMatch(r, c) {
+    if(!grid[r][c]) return;
     let target = grid[r][c].color;
     let matches = [];
     let queue = [[r,c]], visited = new Set([`${r},${c}`]);
@@ -100,9 +131,8 @@ function handleMatch(r, c) {
         playPopSound();
         dropFloating();
     }
-}
-
-function dropFloating() {
+    }
+    function dropFloating() {
     let connected = new Set();
     let queue = [];
     for(let c=0; c<GRID_COLS; c++) { if(grid[0][c]) { connected.add(`0,${c}`); queue.push([0, c]); } }
@@ -135,14 +165,11 @@ function snapToGrid() {
     let c = Math.round((currentBall.x - BUBBLE_RADIUS - offsetX) / (BUBBLE_RADIUS * 2));
     r = Math.max(0, Math.min(r, GRID_ROWS-1));
     c = Math.max(0, Math.min(c, GRID_COLS-1));
-
     grid[r][c] = createBubble(r, c, currentBall.color);
     if(grid[r][c].y > LIMIT_LINE) {
         alert("GAME OVER! Score: " + score);
         initGrid(); score = 0; scoreEl.innerText = 0;
-    } else {
-        handleMatch(r, c);
-    }
+    } else { handleMatch(r, c); }
     resetShooter();
 }
 
@@ -168,13 +195,10 @@ function update() {
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     update();
-    
-    // Ligne limite de danger plus fine
     ctx.strokeStyle = 'rgba(255, 62, 62, 0.15)';
     ctx.setLineDash([5, 5]);
     ctx.beginPath(); ctx.moveTo(0, LIMIT_LINE + BUBBLE_RADIUS); ctx.lineTo(canvas.width, LIMIT_LINE + BUBBLE_RADIUS); ctx.stroke();
     ctx.setLineDash([]);
-    
     for(let r=0; r<GRID_ROWS; r++) {
         for(let c=0; c<GRID_COLS; c++) {
             if(grid[r][c]) drawBubble(grid[r][c].x, grid[r][c].y, grid[r][c].color);
@@ -200,3 +224,5 @@ function toggleAddr() { const a = document.getElementById('addr'); a.style.displ
 initGrid();
 draw();
 </script>
+</body>
+</html>
