@@ -226,7 +226,122 @@ function draw() {
     requestAnimationFrame(draw);
 }
 
-let touchX, touchY;
+let currentLevel = 1;
+let eggClicks = 0;
+let eggTimer = null;
+let isGoldenMode = false;
+
+function dropFloating() {
+    let connected = new Set();
+    let queue = [];
+    for(let c=0; c<GRID_COLS; c++) { if(grid[0][c]) { connected.add(`0,${c}`); queue.push([0, c]); } }
+    while(queue.length > 0) {
+        let [currR, currC] = queue.shift();
+        getNeighbors(currR, currC).forEach(([nr, nc]) => {
+            if(grid[nr] && grid[nr][nc] && !connected.has(`${nr},${nc}`)) {
+                connected.add(`${nr},${nc}`); queue.push([nr, nc]);
+            }
+        });
+    }
+    for(let r=0; r<GRID_ROWS; r++) {
+        for(let c=0; c<GRID_COLS; c++) {
+            if(grid[r][c] && !connected.has(`${r},${c}`)) { grid[r][c] = null; score += 25; }
+        }
+    }
+    scoreEl.innerText = score;
+    if(!grid.some(row => row.some(b => b !== null))) {
+        currentLevel++;
+        alert("NIVEAU " + (currentLevel-1) + " OK ! Prêt pour le " + currentLevel + " ?");
+        initGrid();
+    }
+}
+
+function getNeighbors(r, c) {
+    let offset = (r % 2 === 1) ? 1 : -1;
+    let n = [[r, c-1], [r, c+1], [r-1, c], [r+1, c], [r-1, c+offset], [r+1, c+offset]];
+    return n.filter(([nr, nc]) => nr >= 0 && nr < GRID_ROWS && nc >= 0 && nc < GRID_COLS);
+}
+
+function snapToGrid() {
+    currentBall.shooting = false;
+    let r = Math.round((currentBall.y - BUBBLE_RADIUS) / (BUBBLE_RADIUS * 1.7));
+    let offsetX = (r % 2 === 1) ? BUBBLE_RADIUS : 0;
+    let c = Math.round((currentBall.x - BUBBLE_RADIUS - offsetX) / (BUBBLE_RADIUS * 2));
+    r = Math.max(0, Math.min(r, GRID_ROWS-1));
+    c = Math.max(0, Math.min(c, GRID_COLS-1));
+
+    if (grid[r][c] !== null) {
+        let neighbors = getNeighbors(r, c).filter(([nr, nc]) => grid[nr][nc] === null);
+        if (neighbors.length > 0) {
+            let nearest = neighbors.sort((a, b) => Math.hypot(currentBall.x - (a[1]*BUBBLE_RADIUS*2), currentBall.y - (a[0]*BUBBLE_RADIUS*1.7)) - Math.hypot(currentBall.x - (b[1]*BUBBLE_RADIUS*2), currentBall.y - (b[0]*BUBBLE_RADIUS*1.7)))[0];
+            r = nearest[0]; c = nearest[1];
+        }
+    }
+
+    let finalColor = isGoldenMode ? '#FFD700' : currentBall.color;
+    grid[r][c] = createBubble(r, c, finalColor);
+    handleMatch(r, c);
+    if(grid[r][c] && grid[r][c].y > LIMIT_LINE) {
+        alert("GAME OVER! Score: " + score);
+        currentLevel = 1; score = 0; scoreEl.innerText = 0; initGrid();
+    }
+    resetShooter();
+}
+
+function resetShooter() {
+    let color = isGoldenMode ? '#FFD700' : COLORS[Math.floor(Math.random() * COLORS.length)];
+    currentBall = { x: canvas.width/2, y: canvas.height-40, color: color, vx:0, vy:0, shooting: false };
+}
+
+function update() {
+    if(currentBall.shooting) {
+        currentBall.x += currentBall.vx; currentBall.y += currentBall.vy;
+        if(currentBall.x < BUBBLE_RADIUS || currentBall.x > canvas.width - BUBBLE_RADIUS) currentBall.vx *= -1;
+        for(let r=0; r<GRID_ROWS; r++) {
+            for(let c=0; c<GRID_COLS; c++) {
+                if(grid[r][c] && Math.hypot(currentBall.x - grid[r][c].x, currentBall.y - grid[r][c].y) < BUBBLE_RADIUS * 1.4) {
+                    snapToGrid(); return;
+                }
+            }
+        }
+        if(currentBall.y < BUBBLE_RADIUS) snapToGrid();
+    }
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    update();
+    ctx.strokeStyle = 'rgba(255, 62, 62, 0.15)';
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath(); ctx.moveTo(0, LIMIT_LINE + BUBBLE_RADIUS); ctx.lineTo(canvas.width, LIMIT_LINE + BUBBLE_RADIUS); ctx.stroke();
+    ctx.setLineDash([]);
+    for(let r=0; r<GRID_ROWS; r++) {
+        for(let c=0; c<GRID_COLS; c++) {
+            if(grid[r][c]) drawBubble(grid[r][c].x, grid[r][c].y, grid[r][c].color);
+        }
+    }
+    drawBubble(currentBall.x, currentBall.y, currentBall.color);
+    requestAnimationFrame(draw);
+}
+
+// GESTION EASTER EGG (The Golden Eagle)
+document.getElementById('ui').addEventListener('touchstart', (e) => {
+    eggClicks++;
+    clearTimeout(eggTimer);
+    if (eggClicks >= 5) {
+        isGoldenMode = true;
+        document.querySelector('.score').style.color = '#FFD700';
+        document.querySelector('.score').style.textShadow = '0 0 25px #FFD700';
+        setTimeout(() => {
+            isGoldenMode = false;
+            document.querySelector('.score').style.color = '#ccaa44';
+            document.querySelector('.score').style.textShadow = '0 0 15px rgba(204, 170, 68, 0.6)';
+        }, 15000);
+        eggClicks = 0;
+    }
+    eggTimer = setTimeout(() => { eggClicks = 0; }, 15000);
+});
+
 canvas.addEventListener('touchstart', (e) => { initAudio(); touchX = e.touches[0].clientX; touchY = e.touches[0].clientY; });
 canvas.addEventListener('touchmove', (e) => { touchX = e.touches[0].clientX; touchY = e.touches[0].clientY; });
 canvas.addEventListener('touchend', () => {
