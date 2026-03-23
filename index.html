@@ -37,31 +37,16 @@ const LIMIT_LINE = (GRID_ROWS - 3) * BUBBLE_RADIUS * 1.7;
 let grid = [];
 let score = 0;
 let audioCtx = null;
-let currentLevel = 1;
+let isGoldenMode = false;
 let eggClicks = 0;
 let eggTimer = null;
-let isGoldenMode = false;
+let currentBall = { x: canvas.width/2, y: canvas.height-40, color: COLORS[0], vx:0, vy:0, shooting: false };
 let touchX, touchY;
 
 function initAudio() {
     if (audioCtx && audioCtx.state === 'running') return;
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     if (audioCtx.state === 'suspended') audioCtx.resume();
-    playZenNote();
-}
-
-function playZenNote() {
-    if(!audioCtx) return;
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(220 + (Math.random() * 10), audioCtx.currentTime);
-    gain.gain.setValueAtTime(0, audioCtx.currentTime);
-    gain.gain.linearRampToValueAtTime(0.04, audioCtx.currentTime + 1);
-    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 5);
-    osc.connect(gain); gain.connect(audioCtx.destination);
-    osc.start(); osc.stop(audioCtx.currentTime + 5);
-    setTimeout(playZenNote, 6000 + Math.random() * 3000);
 }
 
 function playPopSound() {
@@ -81,58 +66,20 @@ function initGrid() {
     grid = Array.from({ length: GRID_ROWS }, () => Array(GRID_COLS).fill(null));
     for(let r=0; r<6; r++) {
         for(let c=0; c<GRID_COLS; c++) {
-            grid[r][c] = { x: (c * BUBBLE_RADIUS * 2) + BUBBLE_RADIUS + (r % 2 === 1 ? BUBBLE_RADIUS : 0),
-                          y: (r * BUBBLE_RADIUS * 1.7) + BUBBLE_RADIUS,
-                          color: COLORS[Math.floor(Math.random() * COLORS.length)] };
+            grid[r][c] = { 
+                x: (c * BUBBLE_RADIUS * 2) + BUBBLE_RADIUS + (r % 2 === 1 ? BUBBLE_RADIUS : 0),
+                y: (r * BUBBLE_RADIUS * 1.7) + BUBBLE_RADIUS,
+                color: COLORS[Math.floor(Math.random() * COLORS.length)] 
+            };
         }
     }
 }
-    let currentBall = { x: canvas.width/2, y: canvas.height-40, color: COLORS[0], vx:0, vy:0, shooting: false };
-
-function drawBubble(x, y, color) {
+    function drawBubble(x, y, color) {
     ctx.beginPath(); ctx.arc(x, y, BUBBLE_RADIUS - 1.5, 0, Math.PI*2);
-    ctx.fillStyle = color; ctx.shadowBlur = 12; ctx.shadowColor = color;
+    ctx.fillStyle = color; ctx.shadowBlur = 10; ctx.shadowColor = color;
     ctx.fill(); ctx.shadowBlur = 0;
-    ctx.beginPath(); ctx.arc(x - BUBBLE_RADIUS/3.5, y - BUBBLE_RADIUS/3.5, BUBBLE_RADIUS/6, 0, Math.PI*2);
-    ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.fill();
-}
-
-function handleMatch(r, c) {
-    if(!grid[r][c]) return;
-    let target = grid[r][c].color;
-    let matches = [];
-    let queue = [[r,c]], visited = new Set([`${r},${c}`]);
-    while(queue.length > 0) {
-        let [currR, currC] = queue.shift();
-        matches.push([currR, currC]);
-        let offset = (currR % 2 === 1) ? 1 : -1;
-        let neighbors = [[currR, currC-1], [currR, currC+1], [currR-1, currC], [currR+1, currC], [currR-1, currC+offset], [currR+1, currC+offset]];
-        neighbors.forEach(([nr, nc]) => {
-            if(grid[nr] && grid[nr][nc] && grid[nr][nc].color === target && !visited.has(`${nr},${nc}`)) {
-                visited.add(`${nr},${nc}`); queue.push([nr, nc]);
-            }
-        });
-    }
-    if(matches.length >= 3) {
-        matches.forEach(([mr, mc]) => grid[mr][mc] = null);
-        score += matches.length * 15; scoreEl.innerText = score;
-        playPopSound(); dropFloating();
-    }
-}
-
-function dropFloating() {
-    let connected = new Set(); let queue = [];
-    for(let c=0; c<GRID_COLS; c++) { if(grid[0][c]) { connected.add(`0,${c}`); queue.push([0, c]); } }
-    while(queue.length > 0) {
-        let [currR, currC] = queue.shift();
-        let offset = (currR % 2 === 1) ? 1 : -1;
-        [[currR, currC-1], [currR, currC+1], [currR-1, currC], [currR+1, currC], [currR-1, currC+offset], [currR+1, currC+offset]].forEach(([nr, nc]) => {
-            if(grid[nr] && grid[nr][nc] && !connected.has(`${nr},${nc}`)) { connected.add(`${nr},${nc}`); queue.push([nr, nc]); }
-        });
-    }
-    for(let r=0; r<GRID_ROWS; r++) { for(let c=0; c<GRID_COLS; c++) { if(grid[r][c] && !connected.has(`${r},${c}`)) { grid[r][c] = null; score += 25; } } }
-    scoreEl.innerText = score;
-    if(!grid.some(row => row.some(b => b !== null))) { currentLevel++; alert("LEVEL COMPLETE!"); initGrid(); }
+    ctx.beginPath(); ctx.arc(x - BUBBLE_RADIUS/3, y - BUBBLE_RADIUS/3, BUBBLE_RADIUS/6, 0, Math.PI*2);
+    ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.fill();
 }
 
 function snapToGrid() {
@@ -141,12 +88,19 @@ function snapToGrid() {
     let offsetX = (r % 2 === 1) ? BUBBLE_RADIUS : 0;
     let c = Math.round((currentBall.x - BUBBLE_RADIUS - offsetX) / (BUBBLE_RADIUS * 2));
     r = Math.max(0, Math.min(r, GRID_ROWS-1)); c = Math.max(0, Math.min(c, GRID_COLS-1));
-    if (grid[r][c] !== null) r++; 
+    if (grid[r][c]) r = Math.min(r + 1, GRID_ROWS - 1);
     grid[r][c] = { x: (c * BUBBLE_RADIUS * 2) + BUBBLE_RADIUS + (r % 2 === 1 ? BUBBLE_RADIUS : 0),
                   y: (r * BUBBLE_RADIUS * 1.7) + BUBBLE_RADIUS,
                   color: isGoldenMode ? '#FFD700' : currentBall.color };
-    handleMatch(r, c);
-    if(grid[r][c] && grid[r][c].y > LIMIT_LINE) { alert("GAME OVER!"); score = 0; scoreEl.innerText = 0; initGrid(); }
+    let color = grid[r][c].color; let matches = [[r,c]];
+    [[r, c-1], [r, c+1], [r-1, c], [r+1, c]].forEach(n => {
+        if(grid[n[0]] && grid[n[0]][n[1]] && grid[n[0]][n[1]].color === color) matches.push([n[0], n[1]]);
+    });
+    if(matches.length >= 3) {
+        matches.forEach(m => grid[m[0]][m[1]] = null);
+        score += matches.length * 20; scoreEl.innerText = score; playPopSound();
+    }
+    if(grid[r][c] && grid[r][c].y > LIMIT_LINE) { alert("GAME OVER!"); score=0; scoreEl.innerText=0; initGrid(); }
     currentBall = { x: canvas.width/2, y: canvas.height-40, color: isGoldenMode ? '#FFD700' : COLORS[Math.floor(Math.random()*COLORS.length)], vx:0, vy:0, shooting: false };
 }
 
@@ -155,8 +109,11 @@ function draw() {
     if(currentBall.shooting) {
         currentBall.x += currentBall.vx; currentBall.y += currentBall.vy;
         if(currentBall.x < BUBBLE_RADIUS || currentBall.x > canvas.width - BUBBLE_RADIUS) currentBall.vx *= -1;
-        for(let r=0; r<GRID_ROWS; r++) { for(let c=0; c<GRID_COLS; c++) { if(grid[r][c] && Math.hypot(currentBall.x - grid[r][c].x, currentBall.y - grid[r][c].y) < BUBBLE_RADIUS * 1.4) { snapToGrid(); return; } } }
-        if(currentBall.y < BUBBLE_RADIUS) snapToGrid();
+        let hit = false;
+        for(let r=0; r<GRID_ROWS; r++) { for(let c=0; c<GRID_COLS; c++) {
+            if(grid[r][c] && Math.hypot(currentBall.x - grid[r][c].x, currentBall.y - grid[r][c].y) < BUBBLE_RADIUS * 1.5) { hit = true; break; }
+        } if(hit) break; }
+        if(hit || currentBall.y < BUBBLE_RADIUS) snapToGrid();
     }
     for(let r=0; r<GRID_ROWS; r++) { for(let c=0; c<GRID_COLS; c++) { if(grid[r][c]) drawBubble(grid[r][c].x, grid[r][c].y, grid[r][c].color); } }
     drawBubble(currentBall.x, currentBall.y, currentBall.color);
@@ -169,20 +126,19 @@ document.getElementById('scoreHeader').addEventListener('touchstart', () => {
         isGoldenMode = true; document.getElementById('scoreHeader').style.color = '#FFD700';
         setTimeout(() => { isGoldenMode = false; document.getElementById('scoreHeader').style.color = '#ccaa44'; }, 15000);
     }
-    eggTimer = setTimeout(() => { eggClicks = 0; }, 2000);
+    eggTimer = setTimeout(() => eggClicks = 0, 2000);
 });
 
 canvas.addEventListener('touchstart', (e) => { initAudio(); touchX = e.touches[0].clientX; touchY = e.touches[0].clientY; });
 canvas.addEventListener('touchend', () => {
     if(!currentBall.shooting) {
         let dx = touchX - (canvas.width/2), dy = touchY - (canvas.height-40);
-        let dist = Math.hypot(dx, dy);
-        currentBall.vx = (dx / dist) * 16; currentBall.vy = (dy / dist) * 16;
+        let d = Math.hypot(dx, dy); currentBall.vx = (dx/d)*15; currentBall.vy = (dy/d)*15;
         currentBall.shooting = true;
     }
 });
 
-function toggleAddr() { const a = document.getElementById('addr'); a.style.display = (a.style.display === 'block') ? 'none' : 'block'; }
+function toggleAddr() { const a = document.getElementById('addr'); a.style.display = (a.style.display==='block')?'none':'block'; }
 initGrid(); draw();
 </script>
 </body>
