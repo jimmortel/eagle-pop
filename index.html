@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+    <title>Eagle-Pop Elite 🦅</title>
+    <style>
+        body { margin: 0; background: #080808; color: white; font-family: 'Segoe UI', sans-serif; overflow: hidden; touch-action: none; }
+        canvas { display: block; margin: 0 auto; background: radial-gradient(circle, #1a1a1a 0%, #080808 100%); }
+        #ui { position: absolute; top: 15px; width: 100%; text-align: center; pointer-events: none; z-index: 10; }
+        .score { font-size: 28px; font-weight: 900; color: #ccaa44; text-shadow: 0 0 15px rgba(204, 170, 68, 0.6); letter-spacing: 2px; }
+        
+        #wallet-bar { 
+            position: absolute; bottom: 0; width: 100%; background: rgba(10, 10, 10, 0.9);
+            backdrop-filter: blur(15px); border-top: 2px solid #ccaa44; padding: 20px 0; text-align: center;
+        }
+        .tip-btn {
+            background: linear-gradient(135deg, #ccaa44 0%, #f5d76e 100%); color: #000;
+            border: none; padding: 14px 30px; border-radius: 50px; font-weight: 900;
+            text-transform: uppercase; font-size: 13px; cursor: pointer;
+            box-shadow: 0 0 20px rgba(204,170,68,0.4); transition: transform 0.1s;
+        }
+        .tip-btn:active { transform: scale(0.95); }
+        .addr { font-size: 9px; color: #666; margin-top: 10px; font-family: monospace; word-break: break-all; padding: 0 20px; display: none; }
+    </style>
+</head>
+<body>
+
+<div id="ui">
+    <div class="score">EAGLE-POP: <span id="scoreVal">0</span></div>
+</div>
+
+<canvas id="game"></canvas>
+
+<div id="wallet-bar">
+    <button class="tip-btn" onclick="toggleAddr()">⚡ SUPPORT THE BUILDER (SOL)</button>
+    <div id="addr" class="addr">GU5dNvMQKoUiVJvZ5HUgrv3CxtrR5ujxfHK2HPT6Z6bV</div>
+</div>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const scoreEl = document.getElementById('scoreVal');
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight - 100;
+
+const COLORS = ['#FF3E3E', '#42FF3E', '#3EABFF', '#FFD700'];
+const GRID_COLS = 8;
+const BUBBLE_RADIUS = canvas.width / (GRID_COLS * 2);
+const GRID_ROWS = 12;
+
+let grid = [];
+let score = 0;
+let floatingBubbles = []; // Pour les animations de chute
+
+// Initialisation de la grille (Remplissage partiel)
+function initGrid() {
+    grid = [];
+    for(let r=0; r<GRID_ROWS; r++) {
+        grid[r] = [];
+        for(let c=0; c<GRID_COLS; c++) {
+            if(r < 5) {
+                grid[r][c] = {
+                    x: (c * BUBBLE_RADIUS * 2) + BUBBLE_RADIUS + (r % 2 === 1 ? BUBBLE_RADIUS : 0),
+                    y: (r * BUBBLE_RADIUS * 1.7) + BUBBLE_RADIUS,
+                    color: COLORS[Math.floor(Math.random() * COLORS.length)],
+                    active: true
+                };
+            } else {
+                grid[r][c] = null;
+            }
+        }
+    }
+}
+
+let currentBall = {
+    x: canvas.width / 2,
+    y: canvas.height - 40,
+    color: COLORS[Math.floor(Math.random() * COLORS.length)],
+    vx: 0, vy: 0, shooting: false
+};
+
+function drawBubble(x, y, color, shadow = true) {
+    ctx.beginPath();
+    ctx.arc(x, y, BUBBLE_RADIUS - 2, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    if(shadow) {
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = color;
+    }
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    // Reflet blanc pour le côté "Play Store"
+    ctx.beginPath();
+    ctx.arc(x - BUBBLE_RADIUS/3, y - BUBBLE_RADIUS/3, BUBBLE_RADIUS/5, 0, Math.PI*2);
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.fill();
+}
+
+function update() {
+    if(currentBall.shooting) {
+        currentBall.x += currentBall.vx;
+        currentBall.y += currentBall.vy;
+
+        // Rebond murs
+        if(currentBall.x < BUBBLE_RADIUS || currentBall.x > canvas.width - BUBBLE_RADIUS) {
+            currentBall.vx *= -1;
+        }
+
+        // Collision avec grille
+        checkCollision();
+
+        // Sortie écran haut
+        if(currentBall.y < BUBBLE_RADIUS) snapToGrid();
+    }
+}
+
+function checkCollision() {
+    for(let r=0; r<GRID_ROWS; r++) {
+        for(let c=0; c<GRID_COLS; c++) {
+            let b = grid[r][c];
+            if(b && b.active) {
+                let dist = Math.hypot(currentBall.x - b.x, currentBall.y - b.y);
+                if(dist < BUBBLE_RADIUS * 1.8) {
+                    snapToGrid();
+                    return;
+                }
+            }
+        }
+    }
+}
+
+function snapToGrid() {
+    currentBall.shooting = false;
+    let r = Math.round((currentBall.y - BUBBLE_RADIUS) / (BUBBLE_RADIUS * 1.7));
+    let offsetX = (r % 2 === 1) ? BUBBLE_RADIUS : 0;
+    let c = Math.round((currentBall.x - BUBBLE_RADIUS - offsetX) / (BUBBLE_RADIUS * 2));
+    
+    r = Math.max(0, Math.min(r, GRID_ROWS-1));
+    c = Math.max(0, Math.min(c, GRID_COLS-1));
+
+    grid[r][c] = {
+        x: (c * BUBBLE_RADIUS * 2) + BUBBLE_RADIUS + offsetX,
+        y: (r * BUBBLE_RADIUS * 1.7) + BUBBLE_RADIUS,
+        color: currentBall.color,
+        active: true
+    };
+
+    handleMatch(r, c);
+    resetShooter();
+}
+
+function handleMatch(r, c) {
+    let targetColor = grid[r][c].color;
+    let matches = [];
+    let queue = [[r,c]];
+    let visited = new Set();
+    visited.add(`${r},${c}`);
+
+    while(queue.length > 0) {
+        let [currR, currC] = queue.shift();
+        matches.push([currR, currC]);
+
+        // Voisins (hexagonal)
+        let neighbors = getNeighbors(currR, currC);
+        neighbors.forEach(([nr, nc]) => {
+            if(grid[nr] && grid[nr][nc] && grid[nr][nc].active && 
+               grid[nr][nc].color === targetColor && !visited.has(`${nr},${nc}`)) {
+                visited.add(`${nr},${nc}`);
+                queue.push([nr, nc]);
+            }
+        });
+    }
+
+    if(matches.length >= 3) {
+        matches.forEach(([mr, mc]) => grid[mr][mc] = null);
+        score += matches.length * 10;
+        scoreEl.innerText = score;
+        if(window.navigator.vibrate) window.navigator.vibrate(50);
+    }
+}
+
+function getNeighbors(r, c) {
+    let offset = (r % 2 === 1) ? 1 : -1;
+    let n = [[r, c-1], [r, c+1], [r-1, c], [r+1, c]];
+    n.push([r-1, c+offset], [r+1, c+offset]);
+    return n.filter(([nr, nc]) => nr >= 0 && nr < GRID_ROWS && nc >= 0 && nc < GRID_COLS);
+}
+
+function resetShooter() {
+    currentBall.x = canvas.width / 2;
+    currentBall.y = canvas.height - 40;
+    currentBall.color = COLORS[Math.floor(Math.random() * COLORS.length)];
+    currentBall.shooting = false;
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    update();
+
+    // Ligne de visée (Pointillés)
+    if(!currentBall.shooting) {
+        ctx.setLineDash([5, 10]);
+        ctx.strokeStyle = 'rgba(204, 170, 68, 0.3)';
+        ctx.beginPath(); ctx.moveTo(canvas.width/2, canvas.height-40);
+        ctx.lineTo(currentBall.x, currentBall.y); ctx.stroke();
+        ctx.setLineDash([]);
+    }
+
+    // Grille
+    for(let r=0; r<GRID_ROWS; r++) {
+        for(let c=0; c<GRID_COLS; c++) {
+            if(grid[r][c]) drawBubble(grid[r][c].x, grid[r][c].y, grid[r][c].color);
+        }
+    }
+
+    // Bille de tir
+    drawBubble(currentBall.x, currentBall.y, currentBall.color);
+
+    requestAnimationFrame(draw);
+}
+
+// Contrôles Touch
+canvas.addEventListener('touchstart', (e) => handleInput(e.touches[0]));
+canvas.addEventListener('touchmove', (e) => handleInput(e.touches[0]));
+canvas.addEventListener('touchend', () => {
+    if(!currentBall.shooting) {
+        let dx = touchX - (canvas.width/2);
+        let dy = touchY - (canvas.height-40);
+        let dist = Math.hypot(dx, dy);
+        currentBall.vx = (dx / dist) * 12;
+        currentBall.vy = (dy / dist) * 12;
+        currentBall.shooting = true;
+    }
+});
+
+let touchX, touchY;
+function handleInput(t) {
+    if(currentBall.shooting) return;
+    touchX = t.clientX;
+    touchY = t.clientY;
+}
+
+function toggleAddr() {
+    const a = document.getElementById('addr');
+    a.style.display = (a.style.display === 'block') ? 'none' : 'block';
+}
+
+initGrid();
+draw();
+</script>
+</body>
+</html>
