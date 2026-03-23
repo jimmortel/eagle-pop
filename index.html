@@ -8,23 +8,14 @@
         body { margin: 0; background: #080808; color: white; font-family: 'Segoe UI', sans-serif; overflow: hidden; touch-action: none; }
         canvas { display: block; margin: 0 auto; background: radial-gradient(circle, #1a1a1a 0%, #080808 100%); }
         #ui { position: absolute; top: 15px; width: 100%; text-align: center; pointer-events: none; z-index: 10; }
-        .score { font-size: 28px; font-weight: 900; color: #ccaa44; text-shadow: 0 0 15px rgba(204, 170, 68, 0.6); letter-spacing: 2px; }
-        #wallet-bar { 
-            position: absolute; bottom: 0; width: 100%; background: rgba(10, 10, 10, 0.9);
-            backdrop-filter: blur(15px); border-top: 2px solid #ccaa44; padding: 20px 0; text-align: center;
-        }
-        .tip-btn {
-            background: linear-gradient(135deg, #ccaa44 0%, #f5d76e 100%); color: #000;
-            border: none; padding: 14px 30px; border-radius: 50px; font-weight: 900;
-            text-transform: uppercase; font-size: 13px; cursor: pointer;
-            box-shadow: 0 0 20px rgba(204,170,68,0.4); transition: transform 0.1s;
-        }
-        .tip-btn:active { transform: scale(0.95); }
+        .score { font-size: 28px; font-weight: 900; color: #ccaa44; text-shadow: 0 0 15px rgba(204, 170, 68, 0.6); letter-spacing: 2px; pointer-events: auto; }
+        #wallet-bar { position: absolute; bottom: 0; width: 100%; background: rgba(10, 10, 10, 0.9); backdrop-filter: blur(15px); border-top: 2px solid #ccaa44; padding: 20px 0; text-align: center; }
+        .tip-btn { background: linear-gradient(135deg, #ccaa44 0%, #f5d76e 100%); color: #000; border: none; padding: 14px 30px; border-radius: 50px; font-weight: 900; text-transform: uppercase; font-size: 13px; cursor: pointer; box-shadow: 0 0 20px rgba(204,170,68,0.4); }
         .addr { font-size: 9px; color: #666; margin-top: 10px; font-family: monospace; word-break: break-all; padding: 0 20px; display: none; }
     </style>
 </head>
 <body>
-<div id="ui"><div class="score">EAGLE-POP: <span id="scoreVal">0</span></div></div>
+<div id="ui"><div class="score" id="scoreHeader">EAGLE-POP: <span id="scoreVal">0</span></div></div>
 <canvas id="game"></canvas>
 <div id="wallet-bar">
     <button class="tip-btn" onclick="toggleAddr()">⚡ SUPPORT THE BUILDER (SOL)</button>
@@ -47,6 +38,10 @@ let grid = [];
 let score = 0;
 let audioCtx = null;
 let currentLevel = 1;
+let eggClicks = 0;
+let eggTimer = null;
+let isGoldenMode = false;
+let touchX, touchY;
 
 function initAudio() {
     if (audioCtx && audioCtx.state === 'running') return;
@@ -81,33 +76,24 @@ function playPopSound() {
     osc.connect(gain); gain.connect(audioCtx.destination);
     osc.start(); osc.stop(audioCtx.currentTime + 0.1);
 }
-    function initGrid() {
+
+function initGrid() {
     grid = Array.from({ length: GRID_ROWS }, () => Array(GRID_COLS).fill(null));
     for(let r=0; r<6; r++) {
         for(let c=0; c<GRID_COLS; c++) {
-            grid[r][c] = createBubble(r, c, COLORS[Math.floor(Math.random() * COLORS.length)]);
+            grid[r][c] = { x: (c * BUBBLE_RADIUS * 2) + BUBBLE_RADIUS + (r % 2 === 1 ? BUBBLE_RADIUS : 0),
+                          y: (r * BUBBLE_RADIUS * 1.7) + BUBBLE_RADIUS,
+                          color: COLORS[Math.floor(Math.random() * COLORS.length)] };
         }
     }
 }
-
-function createBubble(r, c, color) {
-    return {
-        x: (c * BUBBLE_RADIUS * 2) + BUBBLE_RADIUS + (r % 2 === 1 ? BUBBLE_RADIUS : 0),
-        y: (r * BUBBLE_RADIUS * 1.7) + BUBBLE_RADIUS,
-        color: color, active: true
-    };
-}
-
-let currentBall = { x: canvas.width/2, y: canvas.height-40, color: COLORS[0], vx:0, vy:0, shooting: false };
+    let currentBall = { x: canvas.width/2, y: canvas.height-40, color: COLORS[0], vx:0, vy:0, shooting: false };
 
 function drawBubble(x, y, color) {
-    ctx.beginPath();
-    ctx.arc(x, y, BUBBLE_RADIUS - 1.5, 0, Math.PI*2);
-    ctx.fillStyle = color;
-    ctx.shadowBlur = 12; ctx.shadowColor = color;
+    ctx.beginPath(); ctx.arc(x, y, BUBBLE_RADIUS - 1.5, 0, Math.PI*2);
+    ctx.fillStyle = color; ctx.shadowBlur = 12; ctx.shadowColor = color;
     ctx.fill(); ctx.shadowBlur = 0;
-    ctx.beginPath();
-    ctx.arc(x - BUBBLE_RADIUS/3.5, y - BUBBLE_RADIUS/3.5, BUBBLE_RADIUS/6, 0, Math.PI*2);
+    ctx.beginPath(); ctx.arc(x - BUBBLE_RADIUS/3.5, y - BUBBLE_RADIUS/3.5, BUBBLE_RADIUS/6, 0, Math.PI*2);
     ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.fill();
 }
 
@@ -116,150 +102,37 @@ function handleMatch(r, c) {
     let target = grid[r][c].color;
     let matches = [];
     let queue = [[r,c]], visited = new Set([`${r},${c}`]);
-
     while(queue.length > 0) {
         let [currR, currC] = queue.shift();
         matches.push([currR, currC]);
-        getNeighbors(currR, currC).forEach(([nr, nc]) => {
+        let offset = (currR % 2 === 1) ? 1 : -1;
+        let neighbors = [[currR, currC-1], [currR, currC+1], [currR-1, currC], [currR+1, currC], [currR-1, currC+offset], [currR+1, currC+offset]];
+        neighbors.forEach(([nr, nc]) => {
             if(grid[nr] && grid[nr][nc] && grid[nr][nc].color === target && !visited.has(`${nr},${nc}`)) {
                 visited.add(`${nr},${nc}`); queue.push([nr, nc]);
             }
         });
     }
-
     if(matches.length >= 3) {
         matches.forEach(([mr, mc]) => grid[mr][mc] = null);
-        score += matches.length * 15;
-        scoreEl.innerText = score;
-        playPopSound();
-        dropFloating();
-    }
-    }
-    function dropFloating() {
-    let connected = new Set();
-    let queue = [];
-    for(let c=0; c<GRID_COLS; c++) { if(grid[0][c]) { connected.add(`0,${c}`); queue.push([0, c]); } }
-    while(queue.length > 0) {
-        let [currR, currC] = queue.shift();
-        getNeighbors(currR, currC).forEach(([nr, nc]) => {
-            if(grid[nr] && grid[nr][nc] && !connected.has(`${nr},${nc}`)) {
-                connected.add(`${nr},${nc}`); queue.push([nr, nc]);
-            }
-        });
-    }
-    for(let r=0; r<GRID_ROWS; r++) {
-        for(let c=0; c<GRID_COLS; c++) {
-            if(grid[r][c] && !connected.has(`${r},${c}`)) { grid[r][c] = null; score += 25; }
-        }
-    }
-    scoreEl.innerText = score;
-    if(!grid.some(row => row.some(b => b !== null))) {
-        currentLevel++;
-        alert("NIVEAU " + (currentLevel-1) + " OK ! Prêt pour le " + currentLevel + " ?");
-        initGrid();
+        score += matches.length * 15; scoreEl.innerText = score;
+        playPopSound(); dropFloating();
     }
 }
-
-function getNeighbors(r, c) {
-    let offset = (r % 2 === 1) ? 1 : -1;
-    let n = [[r, c-1], [r, c+1], [r-1, c], [r+1, c], [r-1, c+offset], [r+1, c+offset]];
-    return n.filter(([nr, nc]) => nr >= 0 && nr < GRID_ROWS && nc >= 0 && nc < GRID_COLS);
-}
-
-function snapToGrid() {
-    currentBall.shooting = false;
-    let r = Math.round((currentBall.y - BUBBLE_RADIUS) / (BUBBLE_RADIUS * 1.7));
-    let offsetX = (r % 2 === 1) ? BUBBLE_RADIUS : 0;
-    let c = Math.round((currentBall.x - BUBBLE_RADIUS - offsetX) / (BUBBLE_RADIUS * 2));
-    r = Math.max(0, Math.min(r, GRID_ROWS-1));
-    c = Math.max(0, Math.min(c, GRID_COLS-1));
-
-    if (grid[r][c] !== null) {
-        let neighbors = getNeighbors(r, c).filter(([nr, nc]) => grid[nr][nc] === null);
-        if (neighbors.length > 0) {
-            let nearest = neighbors.sort((a, b) => Math.hypot(currentBall.x - (a[1]*BUBBLE_RADIUS*2), currentBall.y - (a[0]*BUBBLE_RADIUS*1.7)) - Math.hypot(currentBall.x - (b[1]*BUBBLE_RADIUS*2), currentBall.y - (b[0]*BUBBLE_RADIUS*1.7)))[0];
-            r = nearest[0]; c = nearest[1];
-        }
-    }
-
-    grid[r][c] = createBubble(r, c, currentBall.color);
-    handleMatch(r, c);
-    if(grid[r][c] && grid[r][c].y > LIMIT_LINE) {
-        alert("GAME OVER! Score: " + score);
-        currentLevel = 1; score = 0; scoreEl.innerText = 0; initGrid();
-    }
-    resetShooter();
-}
-
-function resetShooter() {
-    currentBall = { x: canvas.width/2, y: canvas.height-40, color: COLORS[Math.floor(Math.random() * COLORS.length)], vx:0, vy:0, shooting: false };
-}
-
-function update() {
-    if(currentBall.shooting) {
-        currentBall.x += currentBall.vx; currentBall.y += currentBall.vy;
-        if(currentBall.x < BUBBLE_RADIUS || currentBall.x > canvas.width - BUBBLE_RADIUS) currentBall.vx *= -1;
-        for(let r=0; r<GRID_ROWS; r++) {
-            for(let c=0; c<GRID_COLS; c++) {
-                if(grid[r][c] && Math.hypot(currentBall.x - grid[r][c].x, currentBall.y - grid[r][c].y) < BUBBLE_RADIUS * 1.4) {
-                    snapToGrid(); return;
-                }
-            }
-        }
-        if(currentBall.y < BUBBLE_RADIUS) snapToGrid();
-    }
-}
-
-function draw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    update();
-    ctx.strokeStyle = 'rgba(255, 62, 62, 0.15)';
-    ctx.setLineDash([5, 5]);
-    ctx.beginPath(); ctx.moveTo(0, LIMIT_LINE + BUBBLE_RADIUS); ctx.lineTo(canvas.width, LIMIT_LINE + BUBBLE_RADIUS); ctx.stroke();
-    ctx.setLineDash([]);
-    for(let r=0; r<GRID_ROWS; r++) {
-        for(let c=0; c<GRID_COLS; c++) {
-            if(grid[r][c]) drawBubble(grid[r][c].x, grid[r][c].y, grid[r][c].color);
-        }
-    }
-    drawBubble(currentBall.x, currentBall.y, currentBall.color);
-    requestAnimationFrame(draw);
-}
-
-let currentLevel = 1;
-let eggClicks = 0;
-let eggTimer = null;
-let isGoldenMode = false;
 
 function dropFloating() {
-    let connected = new Set();
-    let queue = [];
+    let connected = new Set(); let queue = [];
     for(let c=0; c<GRID_COLS; c++) { if(grid[0][c]) { connected.add(`0,${c}`); queue.push([0, c]); } }
     while(queue.length > 0) {
         let [currR, currC] = queue.shift();
-        getNeighbors(currR, currC).forEach(([nr, nc]) => {
-            if(grid[nr] && grid[nr][nc] && !connected.has(`${nr},${nc}`)) {
-                connected.add(`${nr},${nc}`); queue.push([nr, nc]);
-            }
+        let offset = (currR % 2 === 1) ? 1 : -1;
+        [[currR, currC-1], [currR, currC+1], [currR-1, currC], [currR+1, currC], [currR-1, currC+offset], [currR+1, currC+offset]].forEach(([nr, nc]) => {
+            if(grid[nr] && grid[nr][nc] && !connected.has(`${nr},${nc}`)) { connected.add(`${nr},${nc}`); queue.push([nr, nc]); }
         });
     }
-    for(let r=0; r<GRID_ROWS; r++) {
-        for(let c=0; c<GRID_COLS; c++) {
-            if(grid[r][c] && !connected.has(`${r},${c}`)) { grid[r][c] = null; score += 25; }
-        }
-    }
+    for(let r=0; r<GRID_ROWS; r++) { for(let c=0; c<GRID_COLS; c++) { if(grid[r][c] && !connected.has(`${r},${c}`)) { grid[r][c] = null; score += 25; } } }
     scoreEl.innerText = score;
-    if(!grid.some(row => row.some(b => b !== null))) {
-        currentLevel++;
-        alert("NIVEAU " + (currentLevel-1) + " OK ! Prêt pour le " + currentLevel + " ?");
-        initGrid();
-    }
-}
-
-function getNeighbors(r, c) {
-    let offset = (r % 2 === 1) ? 1 : -1;
-    let n = [[r, c-1], [r, c+1], [r-1, c], [r+1, c], [r-1, c+offset], [r+1, c+offset]];
-    return n.filter(([nr, nc]) => nr >= 0 && nr < GRID_ROWS && nc >= 0 && nc < GRID_COLS);
+    if(!grid.some(row => row.some(b => b !== null))) { currentLevel++; alert("LEVEL COMPLETE!"); initGrid(); }
 }
 
 function snapToGrid() {
@@ -267,83 +140,39 @@ function snapToGrid() {
     let r = Math.round((currentBall.y - BUBBLE_RADIUS) / (BUBBLE_RADIUS * 1.7));
     let offsetX = (r % 2 === 1) ? BUBBLE_RADIUS : 0;
     let c = Math.round((currentBall.x - BUBBLE_RADIUS - offsetX) / (BUBBLE_RADIUS * 2));
-    r = Math.max(0, Math.min(r, GRID_ROWS-1));
-    c = Math.max(0, Math.min(c, GRID_COLS-1));
-
-    if (grid[r][c] !== null) {
-        let neighbors = getNeighbors(r, c).filter(([nr, nc]) => grid[nr][nc] === null);
-        if (neighbors.length > 0) {
-            let nearest = neighbors.sort((a, b) => Math.hypot(currentBall.x - (a[1]*BUBBLE_RADIUS*2), currentBall.y - (a[0]*BUBBLE_RADIUS*1.7)) - Math.hypot(currentBall.x - (b[1]*BUBBLE_RADIUS*2), currentBall.y - (b[0]*BUBBLE_RADIUS*1.7)))[0];
-            r = nearest[0]; c = nearest[1];
-        }
-    }
-
-    let finalColor = isGoldenMode ? '#FFD700' : currentBall.color;
-    grid[r][c] = createBubble(r, c, finalColor);
+    r = Math.max(0, Math.min(r, GRID_ROWS-1)); c = Math.max(0, Math.min(c, GRID_COLS-1));
+    if (grid[r][c] !== null) r++; 
+    grid[r][c] = { x: (c * BUBBLE_RADIUS * 2) + BUBBLE_RADIUS + (r % 2 === 1 ? BUBBLE_RADIUS : 0),
+                  y: (r * BUBBLE_RADIUS * 1.7) + BUBBLE_RADIUS,
+                  color: isGoldenMode ? '#FFD700' : currentBall.color };
     handleMatch(r, c);
-    if(grid[r][c] && grid[r][c].y > LIMIT_LINE) {
-        alert("GAME OVER! Score: " + score);
-        currentLevel = 1; score = 0; scoreEl.innerText = 0; initGrid();
-    }
-    resetShooter();
-}
-
-function resetShooter() {
-    let color = isGoldenMode ? '#FFD700' : COLORS[Math.floor(Math.random() * COLORS.length)];
-    currentBall = { x: canvas.width/2, y: canvas.height-40, color: color, vx:0, vy:0, shooting: false };
-}
-
-function update() {
-    if(currentBall.shooting) {
-        currentBall.x += currentBall.vx; currentBall.y += currentBall.vy;
-        if(currentBall.x < BUBBLE_RADIUS || currentBall.x > canvas.width - BUBBLE_RADIUS) currentBall.vx *= -1;
-        for(let r=0; r<GRID_ROWS; r++) {
-            for(let c=0; c<GRID_COLS; c++) {
-                if(grid[r][c] && Math.hypot(currentBall.x - grid[r][c].x, currentBall.y - grid[r][c].y) < BUBBLE_RADIUS * 1.4) {
-                    snapToGrid(); return;
-                }
-            }
-        }
-        if(currentBall.y < BUBBLE_RADIUS) snapToGrid();
-    }
+    if(grid[r][c] && grid[r][c].y > LIMIT_LINE) { alert("GAME OVER!"); score = 0; scoreEl.innerText = 0; initGrid(); }
+    currentBall = { x: canvas.width/2, y: canvas.height-40, color: isGoldenMode ? '#FFD700' : COLORS[Math.floor(Math.random()*COLORS.length)], vx:0, vy:0, shooting: false };
 }
 
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    update();
-    ctx.strokeStyle = 'rgba(255, 62, 62, 0.15)';
-    ctx.setLineDash([5, 5]);
-    ctx.beginPath(); ctx.moveTo(0, LIMIT_LINE + BUBBLE_RADIUS); ctx.lineTo(canvas.width, LIMIT_LINE + BUBBLE_RADIUS); ctx.stroke();
-    ctx.setLineDash([]);
-    for(let r=0; r<GRID_ROWS; r++) {
-        for(let c=0; c<GRID_COLS; c++) {
-            if(grid[r][c]) drawBubble(grid[r][c].x, grid[r][c].y, grid[r][c].color);
-        }
+    if(currentBall.shooting) {
+        currentBall.x += currentBall.vx; currentBall.y += currentBall.vy;
+        if(currentBall.x < BUBBLE_RADIUS || currentBall.x > canvas.width - BUBBLE_RADIUS) currentBall.vx *= -1;
+        for(let r=0; r<GRID_ROWS; r++) { for(let c=0; c<GRID_COLS; c++) { if(grid[r][c] && Math.hypot(currentBall.x - grid[r][c].x, currentBall.y - grid[r][c].y) < BUBBLE_RADIUS * 1.4) { snapToGrid(); return; } } }
+        if(currentBall.y < BUBBLE_RADIUS) snapToGrid();
     }
+    for(let r=0; r<GRID_ROWS; r++) { for(let c=0; c<GRID_COLS; c++) { if(grid[r][c]) drawBubble(grid[r][c].x, grid[r][c].y, grid[r][c].color); } }
     drawBubble(currentBall.x, currentBall.y, currentBall.color);
     requestAnimationFrame(draw);
 }
 
-// GESTION EASTER EGG (The Golden Eagle)
-document.getElementById('ui').addEventListener('touchstart', (e) => {
-    eggClicks++;
-    clearTimeout(eggTimer);
-    if (eggClicks >= 5) {
-        isGoldenMode = true;
-        document.querySelector('.score').style.color = '#FFD700';
-        document.querySelector('.score').style.textShadow = '0 0 25px #FFD700';
-        setTimeout(() => {
-            isGoldenMode = false;
-            document.querySelector('.score').style.color = '#ccaa44';
-            document.querySelector('.score').style.textShadow = '0 0 15px rgba(204, 170, 68, 0.6)';
-        }, 15000);
-        eggClicks = 0;
+document.getElementById('scoreHeader').addEventListener('touchstart', () => {
+    eggClicks++; clearTimeout(eggTimer);
+    if(eggClicks >= 5) {
+        isGoldenMode = true; document.getElementById('scoreHeader').style.color = '#FFD700';
+        setTimeout(() => { isGoldenMode = false; document.getElementById('scoreHeader').style.color = '#ccaa44'; }, 15000);
     }
-    eggTimer = setTimeout(() => { eggClicks = 0; }, 15000);
+    eggTimer = setTimeout(() => { eggClicks = 0; }, 2000);
 });
 
 canvas.addEventListener('touchstart', (e) => { initAudio(); touchX = e.touches[0].clientX; touchY = e.touches[0].clientY; });
-canvas.addEventListener('touchmove', (e) => { touchX = e.touches[0].clientX; touchY = e.touches[0].clientY; });
 canvas.addEventListener('touchend', () => {
     if(!currentBall.shooting) {
         let dx = touchX - (canvas.width/2), dy = touchY - (canvas.height-40);
@@ -354,8 +183,7 @@ canvas.addEventListener('touchend', () => {
 });
 
 function toggleAddr() { const a = document.getElementById('addr'); a.style.display = (a.style.display === 'block') ? 'none' : 'block'; }
-initGrid();
-draw();
+initGrid(); draw();
 </script>
 </body>
 </html>
