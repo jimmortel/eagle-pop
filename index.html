@@ -165,11 +165,16 @@ function snapToGrid() {
     let c = Math.round((currentBall.x - BUBBLE_RADIUS - offsetX) / (BUBBLE_RADIUS * 2));
     r = Math.max(0, Math.min(r, GRID_ROWS-1));
     c = Math.max(0, Math.min(c, GRID_COLS-1));
+
     grid[r][c] = createBubble(r, c, currentBall.color);
-    if(grid[r][c].y > LIMIT_LINE) {
+    
+    // CORRECTION ICI : On lance handleMatch même si on touche le plafond
+    handleMatch(r, c);
+
+    if(grid[r][c] && grid[r][c].y > LIMIT_LINE) {
         alert("GAME OVER! Score: " + score);
         initGrid(); score = 0; scoreEl.innerText = 0;
-    } else { handleMatch(r, c); }
+    }
     resetShooter();
 }
 
