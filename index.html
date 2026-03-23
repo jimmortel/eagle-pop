@@ -46,10 +46,12 @@ const LIMIT_LINE = (GRID_ROWS - 3) * BUBBLE_RADIUS * 1.7;
 let grid = [];
 let score = 0;
 let audioCtx = null;
+let currentLevel = 1;
 
 function initAudio() {
-    if (audioCtx) return;
+    if (audioCtx && audioCtx.state === 'running') return;
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
     playZenNote();
 }
 
@@ -58,26 +60,27 @@ function playZenNote() {
     const osc = audioCtx.createOscillator();
     const gain = audioCtx.createGain();
     osc.type = 'sine';
-    osc.frequency.setValueAtTime(220 + Math.random() * 5, audioCtx.currentTime);
-    gain.gain.setValueAtTime(0.03, audioCtx.currentTime);
+    osc.frequency.setValueAtTime(220 + (Math.random() * 10), audioCtx.currentTime);
+    gain.gain.setValueAtTime(0, audioCtx.currentTime);
+    gain.gain.linearRampToValueAtTime(0.04, audioCtx.currentTime + 1);
     gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 5);
     osc.connect(gain); gain.connect(audioCtx.destination);
     osc.start(); osc.stop(audioCtx.currentTime + 5);
-    setTimeout(playZenNote, 4000 + Math.random() * 2000);
+    setTimeout(playZenNote, 6000 + Math.random() * 3000);
 }
 
 function playPopSound() {
-    if(!audioCtx) return;
+    if(!audioCtx || audioCtx.state !== 'running') return;
     const osc = audioCtx.createOscillator();
     const gain = audioCtx.createGain();
     osc.type = 'triangle';
-    osc.frequency.setValueAtTime(500, audioCtx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(1000, audioCtx.currentTime + 0.08);
+    osc.frequency.setValueAtTime(450, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(900, audioCtx.currentTime + 0.1);
     gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
-    gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.08);
+    gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.1);
     osc.connect(gain); gain.connect(audioCtx.destination);
-    osc.start(); osc.stop(audioCtx.currentTime + 0.08);
-        }
+    osc.start(); osc.stop(audioCtx.currentTime + 0.1);
+}
     function initGrid() {
     grid = Array.from({ length: GRID_ROWS }, () => Array(GRID_COLS).fill(null));
     for(let r=0; r<6; r++) {
@@ -150,6 +153,11 @@ function handleMatch(r, c) {
         }
     }
     scoreEl.innerText = score;
+    if(!grid.some(row => row.some(b => b !== null))) {
+        currentLevel++;
+        alert("NIVEAU " + (currentLevel-1) + " OK ! Prêt pour le " + currentLevel + " ?");
+        initGrid();
+    }
 }
 
 function getNeighbors(r, c) {
@@ -166,14 +174,19 @@ function snapToGrid() {
     r = Math.max(0, Math.min(r, GRID_ROWS-1));
     c = Math.max(0, Math.min(c, GRID_COLS-1));
 
-    grid[r][c] = createBubble(r, c, currentBall.color);
-    
-    // CORRECTION ICI : On lance handleMatch même si on touche le plafond
-    handleMatch(r, c);
+    if (grid[r][c] !== null) {
+        let neighbors = getNeighbors(r, c).filter(([nr, nc]) => grid[nr][nc] === null);
+        if (neighbors.length > 0) {
+            let nearest = neighbors.sort((a, b) => Math.hypot(currentBall.x - (a[1]*BUBBLE_RADIUS*2), currentBall.y - (a[0]*BUBBLE_RADIUS*1.7)) - Math.hypot(currentBall.x - (b[1]*BUBBLE_RADIUS*2), currentBall.y - (b[0]*BUBBLE_RADIUS*1.7)))[0];
+            r = nearest[0]; c = nearest[1];
+        }
+    }
 
+    grid[r][c] = createBubble(r, c, currentBall.color);
+    handleMatch(r, c);
     if(grid[r][c] && grid[r][c].y > LIMIT_LINE) {
         alert("GAME OVER! Score: " + score);
-        initGrid(); score = 0; scoreEl.innerText = 0;
+        currentLevel = 1; score = 0; scoreEl.innerText = 0; initGrid();
     }
     resetShooter();
 }
